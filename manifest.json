@@ -1,21 +1,21 @@
 {
-  "name": "AnimeWorld India Plugin",
-  "version": "1.0.0",
-  "description": "Nuvio scraper for watchanimeworld.one (Hindi, Tamil, Telugu anime & cartoons)",
-  "author": "Custom",
+  "name": "AnimeWorld India Plugin (Fixed)",
+  "version": "1.1.0",
+  "description": "Nuvio scraper for AnimeWorld India (Hindi, Tamil, Telugu, English)",
+  "author": "Custom Fixed",
   "scrapers": [
     {
       "id": "animeworld",
       "name": "AnimeWorld India",
-      "description": "Hindi / Tamil / Telugu anime & cartoons from watchanimeworld.one",
-      "version": "1.0.0",
-      "author": "Custom",
+      "description": "Hindi / Tamil / Telugu / English anime from AnimeWorld",
+      "version": "1.1.0",
+      "author": "Custom Fixed",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/animeworld.js",
       "enabled": true,
       "formats": ["m3u8", "mp4"],
-      "logo": "https://watchanimeworld.one/favicon.ico",
-      "contentLanguage": ["hi", "ta", "te", "en"]
+      "logo": "https://watchanimeworld.net/favicon.ico",
+      "contentLanguage": ["hi", "ta", "te", "en", "ja"]
     }
   ]
 }
