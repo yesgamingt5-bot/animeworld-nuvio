@@ -1,10 +1,12 @@
-// AnimeWorld India scraper for Nuvio
-// Target: https://watchanimeworld.one/ (and common mirrors)
+// ================================================================
+// AnimeWorld India — Fixed & Improved for Nuvio
+// Domains: watchanimeworld.net + play.zephyrflick.top
+// ================================================================
 
-var BASE = "https://watchanimeworld.one";
-var PLAYER = "https://play.zephyrix.top";
-var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 var TMDB_KEY = "d80ba92bc7cefe3359668d30d06f3305";
+var BASE     = "https://watchanimeworld.net";
+var PLAYER   = "https://play.zephyrflick.top";
+var UA       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 function httpGet(url, extraHeaders) {
   var headers = Object.assign({ "User-Agent": UA }, extraHeaders || {});
@@ -25,7 +27,7 @@ function httpPost(url, body, extraHeaders) {
     body: body
   }).then(function (r) {
     if (!r.ok) throw new Error("HTTP " + r.status);
-    return r.text();
+    return r.json();
   });
 }
 
@@ -53,89 +55,82 @@ function searchSite(title, mediaType) {
 function getEpisodeUrl(seriesUrl, season, episode) {
   return httpGet(seriesUrl, { Referer: BASE + "/" }).then(function (html) {
     var postMatch = html.match(/postid-(\d+)/) || html.match(/data-post="(\d+)"/);
-    if (!postMatch) {
-      // Fallback: look for episode links directly
-      var epPattern = season + "x" + episode;
-      var epRe = /href="(https?:\/\/[^"]+\/episode\/([^"]+))"/g;
-      var m;
-      while ((m = epRe.exec(html)) !== null) {
-        if (m[1].indexOf(epPattern) !== -1 || m[2].indexOf(epPattern) !== -1) {
-          return m[1];
+    var epPattern = season + "x" + episode;
+
+    // First try AJAX season load
+    if (postMatch) {
+      var postId = postMatch[1];
+      var ajaxUrl = BASE + "/wp-admin/admin-ajax.php?action=action_select_season&season=" + season + "&post=" + postId;
+
+      return httpGet(ajaxUrl, { Referer: seriesUrl }).then(function (ajaxHtml) {
+        var epRe = /href="(https?:\/\/[^"]+\/episode\/([^"]+))"/g;
+        var m;
+        while ((m = epRe.exec(ajaxHtml || "")) !== null) {
+          if (m[1].indexOf(epPattern) !== -1 || m[2].indexOf(epPattern) !== -1) {
+            return m[1];
+          }
         }
-      }
-      return null;
+        // Fallback: search original page
+        return findEpisodeInHtml(html, epPattern);
+      }).catch(function () {
+        return findEpisodeInHtml(html, epPattern);
+      });
     }
 
-    var postId = postMatch[1];
-    // Try common ajax pattern
-    var ajaxUrl = BASE + "/wp-admin/admin-ajax.php?action=get_episodes&post=" + postId + "&season=" + season;
-    return httpGet(ajaxUrl, { Referer: seriesUrl }).then(function (ajaxHtml) {
-      var epPattern = season + "x" + episode;
-      var epRe = /href="(https?:\/\/[^"]+\/episode\/([^"]+))"/g;
-      var m;
-      while ((m = epRe.exec(ajaxHtml || html)) !== null) {
-        if (m[1].indexOf(epPattern) !== -1 || m[2].indexOf(epPattern) !== -1) {
-          return m[1];
-        }
-      }
-      // Final fallback on original page
-      epRe = /href="(https?:\/\/[^"]+\/episode\/([^"]+))"/g;
-      while ((m = epRe.exec(html)) !== null) {
-        if (m[1].indexOf(epPattern) !== -1 || m[2].indexOf(epPattern) !== -1) {
-          return m[1];
-        }
-      }
-      return null;
-    }).catch(function () {
-      var epPattern = season + "x" + episode;
-      var epRe = /href="(https?:\/\/[^"]+\/episode\/([^"]+))"/g;
-      var m;
-      while ((m = epRe.exec(html)) !== null) {
-        if (m[1].indexOf(epPattern) !== -1 || m[2].indexOf(epPattern) !== -1) {
-          return m[1];
-        }
-      }
-      return null;
-    });
+    // No postid → direct search on page
+    return findEpisodeInHtml(html, epPattern);
   });
+}
+
+function findEpisodeInHtml(html, epPattern) {
+  var epRe = /href="(https?:\/\/[^"]+\/episode\/([^"]+))"/g;
+  var m;
+  while ((m = epRe.exec(html)) !== null) {
+    if (m[1].indexOf(epPattern) !== -1 || m[2].indexOf(epPattern) !== -1) {
+      return m[1];
+    }
+  }
+  return null;
 }
 
 function getStreamFromPage(pageUrl) {
   return httpGet(pageUrl, { Referer: BASE + "/" }).then(function (html) {
+    // Try multiple player patterns
     var playerMatch = html.match(/(?:src|data-src)="(https?:\/\/play\.[^"]+\/video\/([a-f0-9]+))"/i);
+    
     if (!playerMatch) {
-      playerMatch = html.match(/https?:\/\/play\.[a-z0-9.-]+\/video\/([a-f0-9]+)/i);
+      playerMatch = html.match(/https?:\/\/play\.(zephyrflick|zephyrix)\.top\/video\/([a-f0-9]+)/i);
       if (playerMatch) {
-        playerMatch = [null, "https://play.zephyrix.top/video/" + playerMatch[1], playerMatch[1]];
+        playerMatch = [null, "https://play.zephyrflick.top/video/" + playerMatch[2], playerMatch[2]];
       }
     }
+
     if (!playerMatch) return null;
 
     var videoId = playerMatch[2];
-    var postBody = "hash=" + videoId + "&r=" + encodeURIComponent(BASE + "/");
 
     return httpPost(
-      PLAYER + "/player/index.php?data=" + videoId,
-      postBody,
+      PLAYER + "/player/index.php?data=" + videoId + "&do=getVideo",
+      "hash=" + videoId + "&r=" + encodeURIComponent(BASE + "/"),
       {
         Referer: BASE + "/",
         Origin: PLAYER,
         "X-Requested-With": "XMLHttpRequest"
       }
-    ).then(function (resp) {
-      var data = {};
-      try {
-        data = JSON.parse(resp);
-      } catch (e) {}
-      var streamUrl = data.videoSource || data.source || data.file || null;
+    ).then(function (data) {
+      var streamUrl = data.videoSource || data.securedLink || data.source || data.file || null;
       if (!streamUrl) return null;
 
-      var subtitle = PLAYER + "/cdn/hls/" + videoId + "/Subtitle/subtitle_eng.srt";
+      var contentHashM = streamUrl.match(/\/cdn\/hls\/([a-f0-9]+)\//);
+      var contentHash  = contentHashM ? contentHashM[1] : videoId;
+      var subtitle = PLAYER + "/cdn/down/" + contentHash + "/Subtitle/subtitle_eng.srt";
 
       return {
         url: streamUrl,
         subtitle: subtitle
       };
+    }).catch(function () {
+      return null;
     });
   });
 }
@@ -161,10 +156,19 @@ function getStreams(tmdbId, mediaType, season, episode) {
             return getStreamFromPage(pageUrl);
           }
 
+          // Try requested season first, then force season 1 (many Indian sites put everything in S1)
           return getEpisodeUrl(pageUrl, season || 1, episode || 1)
             .then(function (epUrl) {
-              if (!epUrl) return null;
-              return getStreamFromPage(epUrl);
+              if (epUrl) return getStreamFromPage(epUrl);
+
+              // Fallback: try as season 1
+              if (season && season !== 1) {
+                return getEpisodeUrl(pageUrl, 1, episode || 1)
+                  .then(function (epUrl2) {
+                    return epUrl2 ? getStreamFromPage(epUrl2) : null;
+                  });
+              }
+              return null;
             });
         });
       })
@@ -174,14 +178,11 @@ function getStreams(tmdbId, mediaType, season, episode) {
           return;
         }
 
-        var quality = "1080p";
-        var name = "AnimeWorld • " + quality;
-
         resolve([{
-          name: name,
+          name: "AnimeWorld • 1080p",
           title: "AnimeWorld India",
           url: streamData.url,
-          quality: quality,
+          quality: "1080p",
           headers: {
             "User-Agent": UA,
             "Referer": PLAYER + "/",
@@ -196,12 +197,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
         }]);
       })
       .catch(function (err) {
-        console.error("[AnimeWorld]", err && err.message ? err.message : err);
+        console.error("[AnimeWorld Fixed]", err && err.message ? err.message : err);
         resolve([]);
       });
   });
 }
 
+// Export for Nuvio
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { getStreams: getStreams };
 } else {
